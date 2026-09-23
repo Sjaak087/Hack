@@ -1187,29 +1187,19 @@ function beheerPogingLoggen(naam, email, succes){
   });
 }
 function beheerPaneelOpenen(){
+  // Geen inlog meer: sitebeheer opent gewoon meteen.
+  state.beheerderActief = true;
   state.beheerPaneelOpen = true;
   state.beheerFoutmelding = "";
-  if(state.beheerderActief){
-    alleRestaurantsLuisteren();
-    sitebeheerPogingenLuisteren();
-    feedbackLuisteren();
-    gebruikersLuisteren();
-    bansLuisteren();
-    render();
-    return;
-  }
-  // Geen wachtwoord meer: je wordt meteen anoniem ingelogd bij Firebase. De listeners hierboven
-  // worden gestart door auth.onAuthStateChanged (onderaan dit bestand) zodra dat gelukt is.
+  alleRestaurantsLuisteren();
+  sitebeheerPogingenLuisteren();
+  feedbackLuisteren();
+  gebruikersLuisteren();
+  bansLuisteren();
   render();
-  auth.signInAnonymously().catch(err => {
-    state.beheerFoutmelding = err && err.code === "auth/operation-not-allowed"
-      ? "Anoniem inloggen staat nog uit in Firebase. Zet het aan bij Authentication → Sign-in method → Anoniem."
-      : "Sitebeheer openen mislukte: " + (err && err.message ? err.message : "onbekende fout");
-    render();
-  });
 }
 function beheerderUitloggen(){
-  auth.signOut();
+  state.beheerderActief = false;
   db.ref("restaurants").off();
   db.ref("sitebeheer_pogingen").off();
   db.ref("feedback").off();
@@ -3220,12 +3210,6 @@ db.ref("bans/" + state.apparaatId).on("value", snap => {
 if(state.siteGebruikersNaam) gebruikerRegistreren();
 // Houdt de sitebeheer-status bij op basis van Firebase Authentication (server-side gecontroleerd,
 // niet meer via localStorage) — vuurt ook meteen bij het laden als je nog een geldige sessie hebt.
-auth.onAuthStateChanged(gebruiker => {
-  state.beheerderActief = !!gebruiker;
-  state.beheerFoutmelding = "";
-  if(gebruiker && state.beheerPaneelOpen){ alleRestaurantsLuisteren(); sitebeheerPogingenLuisteren(); feedbackLuisteren(); gebruikersLuisteren(); bansLuisteren(); }
-  render();
-});
 // Losstaande login-status voor restaurant-eigenaren (zie eigenaarAuth hierboven) — heeft geen
 // enkele invloed op state.beheerderActief / sitebeheer.
 eigenaarAuth.onAuthStateChanged(gebruiker => {
