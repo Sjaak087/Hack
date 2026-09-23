@@ -1195,42 +1195,18 @@ function beheerPaneelOpenen(){
     feedbackLuisteren();
     gebruikersLuisteren();
     bansLuisteren();
-  }
-  render();
-}
-function beheerInloggen(naam, email, wachtwoord){
-  naam = (naam || "").trim();
-  email = (email || "").trim();
-  wachtwoord = wachtwoord || "";
-  const minutenOver = beheerMinutenTotOntgrendeld();
-  if(minutenOver > 0){
-    state.beheerFoutmelding = `Te veel mislukte pogingen. Probeer het over ${minutenOver} minuut${minutenOver===1?"":"en"} opnieuw.`;
     render();
     return;
   }
-  if(!naam){ state.beheerFoutmelding = "Vul je naam in."; render(); return; }
-  if(!email || !wachtwoord){ state.beheerFoutmelding = "Vul e-mail en wachtwoord in."; render(); return; }
-  state.beheerFoutmelding = "Bezig met inloggen…";
+  // Geen wachtwoord meer: je wordt meteen anoniem ingelogd bij Firebase. De listeners hierboven
+  // worden gestart door auth.onAuthStateChanged (onderaan dit bestand) zodra dat gelukt is.
   render();
-  auth.signInWithEmailAndPassword(email, wachtwoord)
-    .then(() => {
-      beheerPogingenOpslaan({ aantal: 0, geblokkeerdTot: 0 });
-      beheerPogingLoggen(naam, email, true);
-      // state.beheerderActief wordt door onAuthStateChanged hieronder op true gezet, incl. render()
-    })
-    .catch(() => {
-      beheerPogingLoggen(naam, email, false);
-      const status = beheerPogingenStatus();
-      const nieuwAantal = (status.aantal || 0) + 1;
-      if(nieuwAantal >= BEHEER_MAX_POGINGEN){
-        beheerPogingenOpslaan({ aantal: 0, geblokkeerdTot: Date.now() + BEHEER_LOCKOUT_MINUTEN * 60000 });
-        state.beheerFoutmelding = `Onjuiste inloggegevens. Te veel mislukte pogingen — probeer het over ${BEHEER_LOCKOUT_MINUTEN} minuten opnieuw.`;
-      } else {
-        beheerPogingenOpslaan({ aantal: nieuwAantal, geblokkeerdTot: 0 });
-        state.beheerFoutmelding = `Onjuiste inloggegevens (poging ${nieuwAantal} van ${BEHEER_MAX_POGINGEN}).`;
-      }
-      render();
-    });
+  auth.signInAnonymously().catch(err => {
+    state.beheerFoutmelding = err && err.code === "auth/operation-not-allowed"
+      ? "Anoniem inloggen staat nog uit in Firebase. Zet het aan bij Authentication → Sign-in method → Anoniem."
+      : "Sitebeheer openen mislukte: " + (err && err.message ? err.message : "onbekende fout");
+    render();
+  });
 }
 function beheerderUitloggen(){
   auth.signOut();
@@ -1983,8 +1959,6 @@ function renderLanding(){
 // ============================================================
 function renderBeheerPaneel(){
   if(!state.beheerderActief){
-    const minutenOver = beheerMinutenTotOntgrendeld();
-    const geblokkeerd = minutenOver > 0;
     root.innerHTML = `
       <div class="landing">
         <div class="landing__mark">
@@ -1993,23 +1967,10 @@ function renderBeheerPaneel(){
           <div class="landing__divider"><span class="landing__diamond"></span></div>
         </div>
         <div class="form-card">
-          <label class="form-card__label">E-mailadres</label>
-          <input id="beheer-email" type="email" placeholder="jij@voorbeeld.nl" ${geblokkeerd?"disabled":"autofocus"}>
-          <label class="form-card__label">Wachtwoord</label>
-          <input id="beheer-wachtwoord" type="password" placeholder="••••••••" ${geblokkeerd?"disabled":""}>
-          ${state.beheerFoutmelding ? `<div class="fout">${state.beheerFoutmelding}</div>` : geblokkeerd ? `<div class="fout">Te veel mislukte pogingen. Probeer het over ${minutenOver} minuut${minutenOver===1?"":"en"} opnieuw.</div>` : ""}
-          <button class="btn btn--flame btn--block" data-action="beheer-inloggen" ${geblokkeerd?"disabled":""}>Inloggen</button>
+          ${state.beheerFoutmelding ? `<div class="fout">${state.beheerFoutmelding}</div>` : `<div class="leeg">Sitebeheer wordt geopend…</div>`}
           <button class="terug-link" data-action="beheer-sluiten">← Terug</button>
         </div>
       </div>`;
-    if(geblokkeerd) return;
-    const verstuur = () => beheerInloggen(
-      state.siteGebruikersNaam,
-      document.getElementById("beheer-email").value,
-      document.getElementById("beheer-wachtwoord").value
-    );
-    document.getElementById("beheer-email").addEventListener("keydown", e => { if(e.key === "Enter") verstuur(); });
-    document.getElementById("beheer-wachtwoord").addEventListener("keydown", e => { if(e.key === "Enter") verstuur(); });
     return;
   }
 
@@ -2153,18 +2114,6 @@ function renderBeheerPaneel(){
     </li>`;
   }).join("") : `<div class="leeg">Nog geen berichten van eigenaren ontvangen.</div>`;
 
-  const pogingenArr = Object.entries(state.sitebeheerPogingen || {}).sort((a,b) => (b[1].tijdstip||0)-(a[1].tijdstip||0));
-  const pogingenHtml = pogingenArr.length ? pogingenArr.map(([id,p]) => {
-    const datum = p.tijdstip ? new Date(p.tijdstip).toLocaleString("nl-NL",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"}) : "";
-    return `<li>
-      <div>
-        <span class="update-lijst__datum">${datum}</span>
-        <span>${p.succes ? "✅ Ingelogd" : "❌ Mislukte poging"} — <strong>${p.naam || "(geen naam ingevuld)"}</strong> (${p.email || "(leeg)"})</span>
-      </div>
-      <button class="verwijder-x" data-action="poging-verwijder" data-id="${id}" title="Wegklikken">✕</button>
-    </li>`;
-  }).join("") : `<div class="leeg">Nog geen inlogpogingen geregistreerd.</div>`;
-
   root.innerHTML = `
     <div class="shell">
       <header class="topbar">
@@ -2192,12 +2141,6 @@ function renderBeheerPaneel(){
         <div class="instel-blok">
           <p style="color:var(--text-dim); font-size:.8rem; margin:-4px 0 14px;">Berichten die restaurant-eigenaren rechtstreeks vanuit hun Instellingen naar jou hebben verstuurd.</p>
           <ul class="update-lijst">${feedbackHtml}</ul>
-        </div>
-
-        <h2 class="view-titel">🔐 Inlogpogingen</h2>
-        <div class="instel-blok">
-          <p style="color:var(--text-dim); font-size:.8rem; margin:-4px 0 14px;">De laatste 50 pogingen om bij Sitebeheer in te loggen — zo zie je hier ook mislukte pogingen van anderen. Na ${BEHEER_MAX_POGINGEN} mislukte pogingen achter elkaar wordt inloggen op dat apparaat ${BEHEER_LOCKOUT_MINUTEN} minuten geblokkeerd.</p>
-          <ul class="update-lijst">${pogingenHtml}</ul>
         </div>
 
         <h2 class="view-titel">Systeemupdates</h2>
@@ -3097,13 +3040,6 @@ root.addEventListener("click", e => {
     case "qr-printen": qrPrinten(); break;
     case "qr-link-kopieren": qrLinkKopieren(); break;
     case "beheer-sluiten": beheerPaneelSluiten(); break;
-    case "beheer-inloggen":
-      beheerInloggen(
-        state.siteGebruikersNaam,
-        document.getElementById("beheer-email").value,
-        document.getElementById("beheer-wachtwoord").value
-      );
-      break;
     case "beheer-uitloggen": beheerderUitloggen(); break;
     case "beheer-bezoeken": beheerRestaurantBezoeken(id); break;
     case "beheer-verwijderen": beheerRestaurantVerwijderen(id); break;
