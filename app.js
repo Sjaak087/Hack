@@ -102,8 +102,10 @@ const state = {
   beheerFoutmelding: "",
   alleRestaurants: {},          // alle restaurants in de database, alleen geladen als het beheerpaneel open is
   alleRestaurantsGeladen: false,
-  sitebeheerPogingen: {},        // recente in- en mislukte inlogpogingen bij Sitebeheer (alleen geladen als het paneel open is)
-  feedback: {},                   // berichten van restaurant-eigenaren aan sitebeheer (alleen geladen als het paneel open is)
+  sitebeheerPogingen: {},        // alle in- en mislukte inlogpogingen bij Sitebeheer (uit Firebase, zolang het paneel open is)
+  sitebeheerPogingenGeladen: false,
+  feedback: {},                   // alle berichten van restaurant-eigenaren aan sitebeheer (uit Firebase, zolang het paneel open is)
+  feedbackGeladen: false,
   beheerBezoekModus: false,     // ben je als beheerder een restaurant van iemand anders aan het bekijken/bewerken?
   winkelwagen: {},            // { itemId: {naam, prijs, aantal, notitie, emoji, categorie} }
   bestelModus: "plattegrond",  // plattegrond | producten — welk scherm van Bestellen actief is (alleen relevant als er tafels zijn ingesteld)
@@ -1172,10 +1174,13 @@ function beheerderUitloggen(){
   state.alleRestaurants = {};
   state.alleRestaurantsGeladen = false;
   state.sitebeheerPogingen = {};
+  state.sitebeheerPogingenGeladen = false;
   state.feedback = {};
+  state.feedbackGeladen = false;
   state.gebruikersLijst = {};
   state.gebruikersLijstGeladen = false;
   state.bansLijst = {};
+  state.bansLijstGeladen = false;
   if(state.beheerBezoekModus) beheerRestaurantVerlaten(false);
   state.beheerPaneelOpen = false;
   render();
@@ -1190,14 +1195,18 @@ function beheerPaneelSluiten(){
   state.alleRestaurants = {};
   state.alleRestaurantsGeladen = false;
   state.sitebeheerPogingen = {};
+  state.sitebeheerPogingenGeladen = false;
   state.feedback = {};
+  state.feedbackGeladen = false;
   state.gebruikersLijst = {};
   state.gebruikersLijstGeladen = false;
   state.bansLijst = {};
+  state.bansLijstGeladen = false;
   state.beheerPaneelOpen = false;
   render();
 }
-// Luistert live naar élk restaurant in de database, alleen zolang het beheerpaneel open is.
+// Luistert live naar ALLE restaurants en hun volledige onderliggende data die Firebase
+// voor Sitebeheer teruggeeft. Deze snapshot is de bron voor de beheerweergave.
 function alleRestaurantsLuisteren(){
   db.ref("restaurants").on("value", snap => {
     state.alleRestaurants = snap.val() || {};
@@ -1205,10 +1214,12 @@ function alleRestaurantsLuisteren(){
     render();
   });
 }
-// Luistert live naar de laatste 50 inlogpogingen bij Sitebeheer, alleen zolang het paneel open is.
+// Luistert live naar ALLE inlogpogingen bij Sitebeheer, rechtstreeks uit Firebase,
+// zolang het beheerpaneel open is. Er wordt niets beperkt of uit de weergave gefilterd.
 function sitebeheerPogingenLuisteren(){
-  db.ref("sitebeheer_pogingen").limitToLast(50).on("value", snap => {
+  db.ref("sitebeheer_pogingen").on("value", snap => {
     state.sitebeheerPogingen = snap.val() || {};
+    state.sitebeheerPogingenGeladen = true;
     render();
   });
 }
@@ -1234,10 +1245,12 @@ function feedbackVersturen(tekst){
     toonToast("Bericht verstuurd naar sitebeheer");
   });
 }
-// Luistert live naar de laatste 100 feedback-berichten, alleen zolang het beheerpaneel open is.
+// Luistert live naar ALLE feedback-berichten, rechtstreeks uit Firebase,
+// zolang het beheerpaneel open is. Er wordt niets beperkt of uit de weergave gefilterd.
 function feedbackLuisteren(){
-  db.ref("feedback").limitToLast(100).on("value", snap => {
+  db.ref("feedback").on("value", snap => {
     state.feedback = snap.val() || {};
+    state.feedbackGeladen = true;
     render();
   });
 }
@@ -1315,6 +1328,7 @@ function gebruikersLuisteren(){
 function bansLuisteren(){
   db.ref("bans").on("value", snap => {
     state.bansLijst = snap.val() || {};
+    state.bansLijstGeladen = true;
     render();
   });
 }
@@ -1975,7 +1989,7 @@ function renderBeheerPaneel(){
       }).join("");
 
   const gebruikersArr = Object.entries(state.gebruikersLijst || {}).sort((a,b) => (b[1].laatsteBezoek||0)-(a[1].laatsteBezoek||0));
-  const gebruikersHtml = !state.gebruikersLijstGeladen ? `<div class="leeg">Gebruikers laden…</div>`
+  const gebruikersHtml = !state.gebruikersLijstGeladen || !state.bansLijstGeladen ? `<div class="leeg">Gebruikers en blokkades uit Firebase laden…</div>`
     : gebruikersArr.length === 0 ? `<div class="leeg">Nog niemand heeft een naam ingevuld.</div>`
     : gebruikersArr.map(([apparaatId, g]) => {
         const ban = state.bansLijst[apparaatId];
@@ -2056,7 +2070,8 @@ function renderBeheerPaneel(){
   }).join("") : `<div class="leeg">Nog geen updates geplaatst.</div>`;
 
   const feedbackArr = Object.entries(state.feedback || {}).sort((a,b) => (b[1].tijdstip||0)-(a[1].tijdstip||0));
-  const feedbackHtml = feedbackArr.length ? feedbackArr.map(([id,f]) => {
+  const feedbackHtml = !state.feedbackGeladen ? `<div class="leeg">Feedback uit Firebase laden…</div>`
+    : feedbackArr.length ? feedbackArr.map(([id,f]) => {
     const datum = f.tijdstip ? new Date(f.tijdstip).toLocaleString("nl-NL",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"}) : "";
     return `<li>
       <div>
