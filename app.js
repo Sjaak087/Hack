@@ -6,7 +6,6 @@
 
 firebase.initializeApp(firebaseConfig);
 const db = firebase.database();
-const auth = firebase.auth();
 // Tweede, volledig losstaande Firebase Auth-instantie, alleen voor het inloggen van
 // restaurant-eigenaren bij "Restaurant aanmaken". Bewust GEEN hergebruik van 'auth'
 // hierboven: die wordt in onAuthStateChanged (onderaan dit bestand) gebruikt om
@@ -1150,42 +1149,7 @@ function plattegrondCelKlikken(cel){
   }
 }
 
-// ---------- sitebeheer (Firebase Authentication — geen wachtwoord meer in de broncode) ----------
-// Alleen wie inlogt met een e-mail/wachtwoord-account dat JIJ aanmaakt in de Firebase-console
-// (Authentication → Sign-in method → E-mail/wachtwoord) kan dit vak openen. De controle gebeurt
-// bij Firebase zelf, niet in dit bestand — dus niet te vinden via "Weergave broncode".
-// De écht gevoelige actie (alle restaurants tegelijk opvragen) is bovendien met databaseregels
-// afgeschermd tot ingelogde gebruikers — zie de regels in readme.md.
-const BEHEER_MAX_POGINGEN = 3;
-const BEHEER_LOCKOUT_MINUTEN = 15;
-
-// Bijhouden van mislukte inlogpogingen bij Sitebeheer, lokaal per apparaat/browser — na
-// BEHEER_MAX_POGINGEN mislukte pogingen achter elkaar wordt inloggen hier tijdelijk geblokkeerd.
-function beheerPogingenStatus(){
-  try {
-    return JSON.parse(localStorage.getItem("ticket_beheer_pogingen")) || { aantal: 0, geblokkeerdTot: 0 };
-  } catch(e){
-    return { aantal: 0, geblokkeerdTot: 0 };
-  }
-}
-function beheerPogingenOpslaan(status){
-  localStorage.setItem("ticket_beheer_pogingen", JSON.stringify(status));
-}
-function beheerMinutenTotOntgrendeld(){
-  const status = beheerPogingenStatus();
-  if(!status.geblokkeerdTot || status.geblokkeerdTot <= Date.now()) return 0;
-  return Math.ceil((status.geblokkeerdTot - Date.now()) / 60000);
-}
-// Logt élke inlogpoging (gelukt én mislukt) in de database, zodat jij als eigenaar in
-// Sitebeheer zelf kunt zien of iemand geprobeerd heeft binnen te komen.
-function beheerPogingLoggen(naam, email, succes){
-  db.ref("sitebeheer_pogingen").push({
-    naam: naam || "(geen naam ingevuld)",
-    email: email || "(leeg)",
-    succes: !!succes,
-    tijdstip: firebase.database.ServerValue.TIMESTAMP,
-  });
-}
+// ---------- sitebeheer (geen inlog: de knop opent het paneel meteen) ----------
 function beheerPaneelOpenen(){
   // Geen inlog meer: sitebeheer opent gewoon meteen.
   state.beheerderActief = true;
